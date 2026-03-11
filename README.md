@@ -1,2 +1,4 @@
-# P2Pnetworks
-A peer-peer BitTorrent variant created for CNT5106C.
+Dependency:
+```shell
+pip install bitstring
+```
