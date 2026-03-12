@@ -1,8 +1,6 @@
 # This is the class definition(s) for each type of message possible in the torrent client.
 
 import struct
-import bitarray
-import string
 
 # (N/A)   Handshake - 32 bytes
 #     [ Header: 'P2PFILESHARINGPROJ' (18 bytes) | Zero bits (10 bytes) | peer ID, int (4 bytes) ]
