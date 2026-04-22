@@ -248,12 +248,14 @@ class PeerProcess:
             print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
             max_attempts = 5  # Add retry limit instead of infinite loop
             attempt = 0
+            connected = False
             
-            while attempt < max_attempts:
+            while attempt < max_attempts and not connected:
                 try:
                     print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.settimeout(5.0)  # Add socket timeout
+
                     s.connect((p.host, p.port))
                     print(f"✓ Socket connected to peer {p.peer_id}")  # Debug step 6
                     pc = PeerConnection(s)
@@ -284,11 +286,19 @@ class PeerProcess:
                         daemon=True,
                     ).start()
                     
+                    connected = True
+                    print(f"✓ Successfully connected to peer {p.peer_id}")
                     break  # Connection successful
                     
+                except socket.timeout:
+                    attempt += 1
+                    print(f"❌ Timeout connecting to peer {p.peer_id}")
+                except ConnectionRefusedError:
+                    attempt += 1
+                    print(f"❌ Connection refused by peer {p.peer_id} - peer not running?")
                 except Exception as e:
                     attempt += 1
-                    print(f"Connection attempt {attempt} to peer {p.peer_id} failed: {e}")
+                    print(f"❌ Connection attempt {attempt} to peer {p.peer_id} failed: {type(e).__name__}: {e}")
                     if attempt < max_attempts:
                         time.sleep(1.0)
             
