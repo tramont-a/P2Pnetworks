@@ -177,8 +177,8 @@ class PeerProcess:
                 self.optimistic_unchoke = None
         
         # Log the disconnection
-        now = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id} ({reason})")
+        # now = time.strftime("%Y-%m-%d %H:%M:%S")
+        # print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id} ({reason})")
     
     def _broadcast_completion_if_needed(self) -> None:
         """Send our bitfield periodically to help others track global completion"""
@@ -197,7 +197,7 @@ class PeerProcess:
         Entry point: start server listener and outgoing connections,
         then start timers and wait until termination condition. [10]
         """
-        print("Starting up connection...")
+        print("Starting up connection...\n")
         
         # Initialize tracking variables
         self._last_neighbor_change_time = time.time()
@@ -299,7 +299,7 @@ class PeerProcess:
             
             while attempt < max_attempts and not connected:
                 try:
-                    print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
+                    #print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.settimeout(10.0)  # Add socket timeout
 
@@ -307,10 +307,10 @@ class PeerProcess:
                     print(f"✓ Socket connected to peer {p.peer_id}")  # Debug step 6
                     pc = PeerConnection(s)
                     
-                    print(f"Sending handshake to peer {p.peer_id}")  # Debug step 7
+                    #print(f"Sending handshake to peer {p.peer_id}")  # Debug step 7
                     pc.send_handshake(self.my_peer_id)
                     
-                    print(f"Receiving handshake from peer {p.peer_id}")  # Debug step 8
+                    #print(f"Receiving handshake from peer {p.peer_id}")  # Debug step 8
                     remote_id = pc.recv_and_validate_handshake(expected_peer_id=p.peer_id)
                     print(f"✓ Handshake complete with peer {remote_id}")  # Debug step 9
                     
@@ -413,16 +413,16 @@ class PeerProcess:
                 # Only disconnect on timeout if we've confirmed global completion
                 # OR if we've had too many consecutive timeouts
                 if self._everyone_complete():
-                    print(f"Peer {remote_id} timeout - global completion confirmed, disconnecting")
+                    #print(f"Peer {remote_id} timeout - global completion confirmed, disconnecting")
                     self._handle_peer_disconnect(remote_id, "timeout_after_completion")
                     return
                 elif consecutive_timeouts >= max_consecutive_timeouts:
-                    print(f"Peer {remote_id} - too many consecutive timeouts ({consecutive_timeouts})")
+                    #print(f"Peer {remote_id} - too many consecutive timeouts ({consecutive_timeouts})")
                     self._handle_peer_disconnect(remote_id, "excessive_timeouts")
                     return
                 else:
                     # Log but continue trying
-                    print(f"Peer {remote_id} timeout ({consecutive_timeouts}/{max_consecutive_timeouts}) - continuing...")
+                    #print(f"Peer {remote_id} timeout ({consecutive_timeouts}/{max_consecutive_timeouts}) - continuing...")
                     continue
                     
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
@@ -438,16 +438,16 @@ class PeerProcess:
                     
                     # Attempt to re-establish connection
                     if self._attempt_reconnection(remote_id):
-                        print(f"Successfully reconnected to peer {remote_id}")
+                        #print(f"Successfully reconnected to peer {remote_id}")
                         continue
                     else:
-                        print(f"Failed to reconnect to peer {remote_id}")
+                        #print(f"Failed to reconnect to peer {remote_id}")
                         self._handle_peer_disconnect(remote_id, f"connection_lost: {type(e).__name__}")
                         return
                         
             except Exception as e:
                 # For other errors, be more conservative
-                print(f"Unexpected error with peer {remote_id}: {type(e).__name__}: {e}")
+                #print(f"Unexpected error with peer {remote_id}: {type(e).__name__}: {e}")
                 
                 # Only disconnect for unexpected errors if we're confident about global completion
                 if self._everyone_complete() and time.time() - self.start_time > 60:

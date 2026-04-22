@@ -11,10 +11,10 @@ class peerLogger:
             peerFile1 = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             peerFile2 = "peer_" + ID2 + "/log_peer_" + ID2 + ".log"
             # NOTE: ENSURE IN IMPLEMENTATION - ID1 is the connector, ID2 is the connectee
-            with open(peerFile1, 'w') as file:
+            with open(peerFile1, 'a') as file:
                 file.write(f"{time}: Peer {ID1} makes a connection to Peer {ID2}.\n")
                 print(f"{time}: Peer {ID1} makes a connection to Peer {ID2}.\n")
-            with open(peerFile2, 'w') as file:
+            with open(peerFile2, 'a') as file:
                 file.write(f"{time}: Peer {ID2} is connected from Peer {ID1}.\n")
                 print(f"{time}: Peer {ID2} is connected from Peer {ID1}.\n")
         else:

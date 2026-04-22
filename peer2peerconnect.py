@@ -52,7 +52,7 @@ class PeerConnection:
             raise IOError("Bad handshake zero bits")
 
         (peer_id,) = struct.unpack(">I", data[28:32])  # 4-byte integer peer ID [1]
-        print(f"DEBUG: Received peer ID: {peer_id}, Expected: {expected_peer_id}")
+        #print(f"DEBUG: Received peer ID: {peer_id}, Expected: {expected_peer_id}")
         if expected_peer_id is not None and peer_id != expected_peer_id:
             raise IOError(f"Unexpected peer id {peer_id} (expected {expected_peer_id})")
         return peer_id
