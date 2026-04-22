@@ -6,7 +6,7 @@ from typing import Dict, Optional, Set, List
 
 from common_config import CommonConfig
 from peer_info_config import PeerInfoConfig, RemotePeerInfo
-from peer_logger import PeerLogger
+from peer_logger1 import PeerLogger
 from piece_manager import PieceManager, Bitfield
 from peer_server import PeerServer
 from peer_handler import PeerHandler

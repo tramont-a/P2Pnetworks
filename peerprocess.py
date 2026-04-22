@@ -18,7 +18,7 @@ from peer2peerconnect import (
     PIECE,
 )
 from piece_manager import PieceManager, Bitfield
-from logging import logger as PeerLogger  # your logging class [3]
+from peer_logging import peerLogger as logger # your logging class [3]
 
 # ---------------------- Config parsing ---------------------- [1][2][10]
 
@@ -32,6 +32,7 @@ class CommonConfig:
         self.file_size = 0
         self.piece_size = 0
         self._parse()
+        self.first_neighbor_connected = threading.Event()
 
     def _parse(self) -> None:
         with open(self.path, "r") as f:
@@ -63,6 +64,7 @@ class PeerInfoEntry:
 
 
 def parse_peerinfo(path: str) -> List[PeerInfoEntry]:
+    print("Parsing peer info.")
     peers: List[PeerInfoEntry] = []
     with open(path, "r") as f:
         for line in f:
@@ -78,6 +80,8 @@ def parse_peerinfo(path: str) -> List[PeerInfoEntry]:
                     has_file=(has_str == "1"),
                 )
             )
+            print(pid_str)
+    print(peers)
     return peers
 
 
@@ -126,7 +130,7 @@ class PeerProcess:
         )
 
         # logging [3][10]
-        self.logger = PeerLogger()
+        self.logger = logger()
 
         # neighbors
         self.neighbors_lock = threading.Lock()
@@ -140,26 +144,49 @@ class PeerProcess:
         self.all_peers_complete = False
 
     # ---------------------- Connection management ----------------------
+    def _register_neighbor(self, remoteID: int, pc: PeerConnection) -> None:
+        with self.neighbors_lock:
+            if remoteID not in self.neighbors:
+                self.neighbors[remoteID] = NeighborState(
+                    peer_id=remoteID,
+                    conn=pc,
+                    num_pieces=self.pm.num_pieces,
+                )
+            self.first_neighbor_connected.set()
 
     def start(self) -> None:
         """
         Entry point: start server listener and outgoing connections,
         then start timers and wait until termination condition. [10]
         """
+        print("Starting up connection...")
+
         # Start server thread (accept connections from later peers) [10]
         server_thread = threading.Thread(target=self._server_loop, daemon=True)
         server_thread.start()
 
         # Make outgoing connections to peers listed before us [10]
+        print("Try connecting to earlier peers...")
         self._connect_to_earlier_peers()
+        print("Done? connecting to earlier peers.")
+
+        server_thread = threading.Thread(target=self._server_loop, daemon=True)
+        server_thread.start()
+
+        maxWait = 30
+        waitCount = 0
 
         # Wait until we are connected to at least one neighbor before
         # starting piece exchange. [10]
-        while True:
+        while waitCount < (maxWait*10):
             with self.neighbors_lock:
                 if self.neighbors:
                     break
             time.sleep(0.1)
+            waitCount += 1
+
+        if not self.neighbors:
+            print("No neighbors connected after waiting.")
 
         # Start choking/unchoking timers [10]
         threading.Thread(target=self._unchoke_timer_loop, daemon=True).start()
@@ -227,11 +254,19 @@ class PeerProcess:
         """
         For each peer listed before us in PeerInfo.cfg, connect as a client. [10]
         """
+        print("Connect to earlier peers.")
         my_index = next(i for i, p in enumerate(self.peers) if p.peer_id == self.my_peer_id)
+        print(my_index)
+        if my_index == 0:
+            return # first peer in loop, no earlier to list
         earlier = self.peers[:my_index]
+        print(earlier)
         for p in earlier:
+            print("in for")
             while True:
+                print("in while")
                 try:
+                    print("Trying connection..")
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.connect((p.host, p.port))
                     pc = PeerConnection(s)

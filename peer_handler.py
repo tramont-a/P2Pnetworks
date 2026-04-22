@@ -6,7 +6,7 @@ from peer2peerconnect import (
     PeerConnection, PeerMessage,
     CHOKE, UNCHOKE, INTERESTED, NOT_INTERESTED, HAVE, BITFIELD, REQUEST, PIECE
 )
-from peer_logger import PeerLogger
+from peer_logger1 import PeerLogger
 from piece_manager import PieceManager, Bitfield
 
 

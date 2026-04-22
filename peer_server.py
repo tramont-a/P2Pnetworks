@@ -3,7 +3,7 @@ import socket
 import threading
 from typing import Callable, Optional, List
 
-from peer_logger import PeerLogger
+from peer_logger1 import PeerLogger
 from piece_manager import PieceManager
 from peer_handler import PeerHandler
 
