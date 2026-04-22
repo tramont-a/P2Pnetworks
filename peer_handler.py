@@ -9,14 +9,13 @@ from peer2peerconnect import (
 from peer_logging import peerLogger
 from piece_manager import PieceManager, Bitfield
 
-
 class PeerHandler:
     """
     Per-neighbor connection handler:
-      - Performs handshake (32 bytes) and initial bitfield exchange [3][8]
-      - Tracks neighbor bitfield, interest, and choke state
-      - Implements CHOKE/UNCHOKE/INTERESTED/NOT_INTERESTED/HAVE/BITFIELD/REQUEST/PIECE workflows [3][8]
-      - Exposes send_choke(), send_unchoke(), reset_download_rate() for schedulers
+    - Performs handshake (32 bytes) and initial bitfield exchange [3][8]
+    - Tracks neighbor bitfield, interest, and choke state
+    - Implements CHOKE/UNCHOKE/INTERESTED/NOT_INTERESTED/HAVE/BITFIELD/REQUEST/PIECE workflows [3][8]
+    - Exposes send_choke(), send_unchoke(), reset_download_rate() for schedulers
     """
 
     def __init__(
@@ -185,13 +184,16 @@ class PeerHandler:
             self._logger.receiveHave(str(self._peer_id), idx)
         if self._neighbor_bf is None:
             self._neighbor_bf = Bitfield(self._pm.num_pieces, initial_have_all=False)
+
         # Update neighbor bitfield
         try:
             self._neighbor_bf.set(idx, True)
         except Exception:
             pass
+
         # Reassess interest and potentially send INTERESTED/NOT_INTERESTED [8]
         self._update_interest()
+
         # If we are unchoked and have no in-flight request, try to request
         self._choose_and_request()
 
@@ -206,6 +208,7 @@ class PeerHandler:
     def _handle_request(self, payload: bytes) -> None:
         if self._peer_id is None:
             return
+
         # Only serve if policy allows upload to this neighbor (preferred or optimistic) [8]
         if not self._allows_upload_to(self._peer_id):
             return
@@ -225,16 +228,21 @@ class PeerHandler:
             newly_completed = self._pm.write_piece(idx, data)
         except Exception:
             return
+
         # Update rate for this neighbor (pieces received this interval)
         self._download_rate += 1
+
         # Clear in-flight marker if we were waiting on this piece
         if self._in_flight_request == idx:
             self._in_flight_request = None
+
         # Announce HAVE to all other neighbors
         self._broadcast_have(idx, origin=self)
+
         # Log piece download and decide next action
         if self._peer_id is not None and newly_completed:
             self._logger.downloadPiece(str(self._peer_id), idx, self._pm.bitfield.count_have())
+
         # If we now have the full file, we may become uninterested in some neighbors [8]
         if self._neighbor_bf is not None:
             # Try to request the next interesting piece if still unchoked
