@@ -678,18 +678,24 @@ class PeerProcess:
                 self.completed_peers.add(remote_id)
 
     def _handle_request(self, remote_id: int, payload: bytes) -> None:
-        # Only serve if this neighbor is currently unchoked by us [10]
-        with self.neighbors_lock:
-            ns = self.neighbors.get(remote_id)
-            if ns is None or ns.choked_by_us:
-                return
-            conn = ns.conn
-        idx = PeerConnection.parse_index_payload(payload)
-        try:
-            data = self.pm.read_piece(idx)
-        except Exception:
+    idx = PeerConnection.parse_index_payload(payload)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Log the request message
+    self.logger.recRequest(str(self.my_peer_id), str(remote_id), idx, now)
+    
+    # Only serve if this neighbor is currently unchoked by us [10]
+    with self.neighbors_lock:
+        ns = self.neighbors.get(remote_id)
+        if ns is None or ns.choked_by_us:
             return
-        conn.send_piece(idx, data)
+        conn = ns.conn
+    idx = PeerConnection.parse_index_payload(payload)
+    try:
+        data = self.pm.read_piece(idx)
+    except Exception:
+        return
+    conn.send_piece(idx, data)
 
     def _handle_piece(self, remote_id: int, payload: bytes) -> None:
         idx, data = PeerConnection.parse_piece_payload(payload)
