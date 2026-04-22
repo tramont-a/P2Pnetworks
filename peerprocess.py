@@ -180,6 +180,24 @@ class PeerProcess:
         # now = time.strftime("%Y-%m-%d %H:%M:%S")
         # print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id} ({reason})")
     
+    def print_peer_info(self):
+        print(f"\n---Peer Info Configuration ---")
+        print(f"Peer ID: {self.my_peer_id}")
+        print(f"  Host: {self.my_host}")
+        print(f"  Port: {self.my_port}")
+        print(f"  Has File: {self.pm.complete()}")
+        print(f"  Bitfield: {self.pm.bitfield}")
+        print(f"  ---")
+
+    def print_common_config(self):
+        print(f"\n--- Common Configuration ---")
+        print(f"Preferred Neighbors: {self.common.num_pref_neighbors}")
+        print(f"Unchoke Interval: {self.common.unchoke_interval}")
+        print(f"Optimistic Unchoke Interval: {self.common.opt_unchoke_interval}")
+        print(f"File Name: {self.common.file_name}")
+        print(f"File Size: {self.common.file_size}")
+        print(f"Piece Size: {self.common.piece_size}")
+
     def _broadcast_completion_if_needed(self) -> None:
         """Send our bitfield periodically to help others track global completion"""
         if self.pm.complete():
@@ -197,7 +215,10 @@ class PeerProcess:
         Entry point: start server listener and outgoing connections,
         then start timers and wait until termination condition. [10]
         """
-        print("Starting up connection...\n")
+        print("Starting up connection...")
+
+        self.print_peer_info()
+        self.print_common_config()
         
         # Initialize tracking variables
         self._last_neighbor_change_time = time.time()
@@ -292,7 +313,7 @@ class PeerProcess:
             if p.peer_id == self.my_peer_id:
                 continue
                 
-            #print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
+            print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
             max_attempts = 5  # Add retry limit instead of infinite loop
             attempt = 0
             connected = False
@@ -301,7 +322,7 @@ class PeerProcess:
                 try:
                     #print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(10.0)  # Add socket timeout
+                    s.settimeout(5.0)  # Add socket timeout
 
                     s.connect((p.host, p.port))
                     print(f"✓ Socket connected to peer {p.peer_id}")  # Debug step 6
@@ -633,7 +654,7 @@ class PeerProcess:
                 return
             ns.bitfield.set(idx, True)
         # Log [3][10]
-        self.logger.recHave(str(self.my_peer_id), str(remote_id), idx, now)
+        self.logger.recHave(str(self.my_peer_id), str(remote_id), idx, now, str(self.pm.bitfield))
         # Decide if we are interested [10]
         self._update_interest_for_neighbor(remote_id)
 

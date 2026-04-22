@@ -55,12 +55,12 @@ class peerLogger:
         else:
             print("ERROR: choking")
 
-    def recHave(self, ID1, ID2, index, time):
+    def recHave(self, ID1, ID2, index, time, bitfield):
         if (ID1 and ID2):
             # ID 1 = receiver ; ID 2 = sender
             fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
-                file.write(f"{time}: Peer {ID1} received the 'have' message from {ID2} for the piece {index}.\n")
+                file.write(f"{time}: Peer {ID1} received the 'have' message from {ID2} for the piece {index}. Updated bitfield: {bitfield}\n")
         else:
             print("ERROR: recHave")
     
@@ -87,7 +87,7 @@ class peerLogger:
             # ID1 = downloader ; ID2 = sender
             fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
-                file.write(f"{time}: Peer {ID1} has downloaded the piece {index} from {ID2}. Now the number of pieces it has is {number}.\n")
+                file.write(f"{time}: Peer {ID1} has downloaded the piece {index} from {ID2}. Now the number of pieces it has is {number} (bitfield updated).\n")
         else:
             print("ERROR: pieceDL")
 

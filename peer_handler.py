@@ -187,7 +187,7 @@ class PeerHandler:
         idx = PeerConnection.parse_index_payload(payload)
         if self._peer_id is not None:
         # Changed from receiveHave to recHave
-            self._logger.recHave(str(self._my_peer_id), str(self._peer_id), idx, time.time())
+            self._logger.recHave(str(self._my_peer_id), str(self._peer_id), idx, time.time(), str(self._pm.bitfield))
         if self._neighbor_bf is None:
             self._neighbor_bf = Bitfield(self._pm.num_pieces, initial_have_all=False)
 
