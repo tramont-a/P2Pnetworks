@@ -60,6 +60,7 @@ class PeerInfoEntry:
         self.host = host
         self.port = port
         self.has_file = has_file
+        
 
 
 def parse_peerinfo(path: str) -> List[PeerInfoEntry]:
@@ -144,8 +145,37 @@ class PeerProcess:
 
         # termination
         self.all_peers_complete = False
+        self.start_time = time.time()
 
     # ---------------------- Connection management ----------------------
+    def _handle_peer_disconnect(self, peer_id: int, reason: str) -> None:
+        """Handle peer disconnection and cleanup"""
+        print(f"Handling disconnect for peer {peer_id}: {reason}")
+        
+        with self.neighbors_lock:
+            if peer_id not in self.neighbors:
+                return
+            
+            ns = self.neighbors[peer_id]
+            
+            # Close the connection safely
+            try:
+                ns.conn.close()
+            except Exception:
+                pass
+            
+            # Remove from neighbors
+            del self.neighbors[peer_id]
+            
+            # Remove from preferred/optimistic sets
+            self.preferred_neighbors.discard(peer_id)
+            if self.optimistic_unchoke == peer_id:
+                self.optimistic_unchoke = None
+        
+        # Log the disconnection
+        now = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id}")
+    
     def start(self) -> None:
         """
         Entry point: start server listener and outgoing connections,
@@ -245,6 +275,7 @@ class PeerProcess:
         for p in earlier:
             if p.peer_id == self.my_peer_id:
                 continue
+                
             print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
             max_attempts = 5  # Add retry limit instead of infinite loop
             attempt = 0
@@ -286,8 +317,9 @@ class PeerProcess:
                         daemon=True,
                     ).start()
                     
-                    connected = True
                     print(f"✓ Successfully connected to peer {p.peer_id}")
+                    time.sleep(0.5)
+                    connected = True
                     break  # Connection successful
                     
                 except socket.timeout:
@@ -324,10 +356,26 @@ class PeerProcess:
                     return
                 ns = self.neighbors[remote_id]
                 conn = ns.conn
+            
             try:
+                # Set a reasonable timeout for message reception
+                conn.sock.settimeout(30.0)  # 30 second timeout
                 msg = conn.recv_message()
-            except Exception:
-                # connection closed
+                
+                # Reset timeout after successful message
+                conn.sock.settimeout(None)
+                
+            except socket.timeout:
+                print(f"Peer {remote_id} connection timed out")
+                self._handle_peer_disconnect(remote_id, "timeout")
+                return
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                print(f"Peer {remote_id} connection reset by peer")
+                self._handle_peer_disconnect(remote_id, "connection_reset")
+                return
+            except Exception as e:
+                print(f"Connection to peer {remote_id} failed: {e}")
+                self._handle_peer_disconnect(remote_id, "error")
                 return
 
             if msg.msg_type == CHOKE:
@@ -586,16 +634,25 @@ class PeerProcess:
     # ---------------------- Completion condition ---------------------- [10]
 
     def _everyone_complete(self) -> bool:
-        # We must know when all peers have the complete file [10].
-        # A simple approximation is: we are complete, and each neighbor's
-        # bitfield shows full completion. This assumes eventual convergence.
+        # Don't exit for at least 30 seconds (adjust as needed)
+        if time.time() - self.start_time < 30:
+            return False
+
+        # Don't declare complete until we have reasonable connectivity
         if not self.pm.complete():
             return False
+        
         with self.neighbors_lock:
-            for ns in self.neighbors.values():
-                if not ns.bitfield.complete():
-                    return False
-        return True
+            # Ensure we have some neighbors (avoid premature exit)
+            if len(self.neighbors) == 0:
+                return False
+            
+            # Check if all connected neighbors are complete
+            all_neighbors_complete = all(ns.bitfield.complete() for ns in self.neighbors.values())
+            
+            # Additional safety: ensure we've been running for a minimum time
+            # This gives other peers time to connect and exchange data
+            return all_neighbors_complete
 
 
 # ---------------------- Main ---------------------- [10]

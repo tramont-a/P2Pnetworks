@@ -142,11 +142,22 @@ class PeerConnection:
         chunks = []
         remaining = n
         while remaining > 0:
-            chunk = self.sock.recv(remaining)
-            if not chunk:
-                raise IOError("Socket closed while receiving")
-            chunks.append(chunk)
-            remaining -= len(chunk)
+            try:
+                chunk = self.sock.recv(remaining)
+                if not chunk:
+                    # Peer closed connection gracefully
+                    raise ConnectionResetError("Peer closed connection")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            except socket.timeout:
+                raise  # Let caller handle timeout
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                raise  # Let caller handle connection errors
+            except OSError as e:
+                if e.errno == 9:  # Bad file descriptor
+                    raise ConnectionResetError("Socket closed")
+                raise
+        
         return b"".join(chunks)
 
     def close(self) -> None:
