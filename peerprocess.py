@@ -153,7 +153,7 @@ class PeerProcess:
     # ---------------------- Connection management ----------------------
     def _handle_peer_disconnect(self, peer_id: int, reason: str) -> None:
         """Enhanced disconnect handler that tracks changes"""
-        print(f"Handling disconnect for peer {peer_id}: {reason}")
+        #print(f"Handling disconnect for peer {peer_id}: {reason}")
         
         with self.neighbors_lock:
             if peer_id not in self.neighbors:
@@ -428,12 +428,12 @@ class PeerProcess:
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
                 # For connection errors, only disconnect if global completion is confirmed
                 if self._everyone_complete():
-                    print(f"Peer {remote_id} connection error after completion: {e}")
+                    #print(f"Peer {remote_id} connection error after completion: {e}")
                     self._handle_peer_disconnect(remote_id, f"connection_error_after_completion: {type(e).__name__}")
                     return
                 else:
                     # Try to reconnect or wait before giving up
-                    print(f"Peer {remote_id} connection error before completion: {e} - attempting recovery...")
+                    #(f"Peer {remote_id} connection error before completion: {e} - attempting recovery...")
                     time.sleep(2.0)  # Brief pause before retry
                     
                     # Attempt to re-establish connection
@@ -506,7 +506,7 @@ class PeerProcess:
             return False
             
         except Exception as e:
-            print(f"Reconnection to peer {remote_id} failed: {e}")
+            #print(f"Reconnection to peer {remote_id} failed: {e}")
             return False
 
     def _send_periodic_keepalive(self) -> None:
@@ -578,7 +578,7 @@ class PeerProcess:
         Track when neighbors connect/disconnect to help with completion detection.
         """
         self._last_neighbor_change_time = time.time()
-        print(f"Neighbor change: peer {remote_id} {action} at {time.strftime('%H:%M:%S')}")
+        # print(f"Neighbor change: peer {remote_id} {action} at {time.strftime('%H:%M:%S')}")
 
     # ---------------------- Individual message handlers ----------------------
 
