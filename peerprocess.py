@@ -150,7 +150,7 @@ class PeerProcess:
     # ---------------------- Connection management ----------------------
     def _handle_peer_disconnect(self, peer_id: int, reason: str) -> None:
         """Handle peer disconnection and cleanup"""
-        print(f"Handling disconnect for peer {peer_id}: {reason}")
+        #print(f"Handling disconnect for peer {peer_id}: {reason}")
         
         with self.neighbors_lock:
             if peer_id not in self.neighbors:
@@ -188,12 +188,12 @@ class PeerProcess:
         server_thread.start()
 
         # Make outgoing connections to peers listed before us [10]
-        print("Try connecting to earlier peers...")
+        #print("Try connecting to earlier peers...")
         self._connect_to_earlier_peers()
-        print("Done? connecting to earlier peers.")
+       # print("Done? connecting to earlier peers.")
 
         if not self.first_neighbor_connected.wait(timeout=30.0):
-            print("Timeout. No neighbors connected.")
+            print("Timeout.")
 
         # Start choking/unchoking timers [10]
         threading.Thread(target=self._unchoke_timer_loop, daemon=True).start()
@@ -236,7 +236,7 @@ class PeerProcess:
             remote_id = pc.recv_and_validate_handshake()
 
             if remote_id == self.my_peer_id:
-                print(f"Rejecting self-connection: {remote_id}")
+                #print(f"Rejecting self-connection: {remote_id}")
                 pc.close()
                 return
             # Send our handshake [10]
@@ -263,20 +263,20 @@ class PeerProcess:
             pc.close()
 
     def _connect_to_earlier_peers(self) -> None:
-        print("Connect to earlier peers.")
+        #print("Connect to earlier peers.")
         my_index = next(i for i, p in enumerate(self.peers) if p.peer_id == self.my_peer_id)
         if my_index == 0:
-            print("No earlier peers to connect to.")
+            #print("No earlier peers to connect to.")
             return
         
         earlier = self.peers[:my_index]
-        print(f"Earlier peers to connect to: {[(p.peer_id, p.host, p.port) for p in earlier]}")  # Debug step 3
+        #print(f"Earlier peers to connect to: {[(p.peer_id, p.host, p.port) for p in earlier]}")  # Debug step 3
 
         for p in earlier:
             if p.peer_id == self.my_peer_id:
                 continue
                 
-            print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
+            #print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
             max_attempts = 5  # Add retry limit instead of infinite loop
             attempt = 0
             connected = False
@@ -324,13 +324,13 @@ class PeerProcess:
                     
                 except socket.timeout:
                     attempt += 1
-                    print(f"❌ Timeout connecting to peer {p.peer_id}")
+                    #print(f"❌ Timeout connecting to peer {p.peer_id}")
                 except ConnectionRefusedError:
                     attempt += 1
-                    print(f"❌ Connection refused by peer {p.peer_id} - peer not running?")
+                    #print(f"❌ Connection refused by peer {p.peer_id} - peer not running?")
                 except Exception as e:
                     attempt += 1
-                    print(f"❌ Connection attempt {attempt} to peer {p.peer_id} failed: {type(e).__name__}: {e}")
+                    #print(f"❌ Connection attempt {attempt} to peer {p.peer_id} failed: {type(e).__name__}: {e}")
                     if attempt < max_attempts:
                         time.sleep(1.0)
             
@@ -366,15 +366,15 @@ class PeerProcess:
                 conn.sock.settimeout(None)
                 
             except socket.timeout:
-                print(f"Peer {remote_id} connection timed out")
+                #print(f"Peer {remote_id} connection timed out")
                 self._handle_peer_disconnect(remote_id, "timeout")
                 return
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-                print(f"Peer {remote_id} connection reset by peer")
+                #print(f"Peer {remote_id} connection reset by peer")
                 self._handle_peer_disconnect(remote_id, "connection_reset")
                 return
             except Exception as e:
-                print(f"Connection to peer {remote_id} failed: {e}")
+                #print(f"Connection to peer {remote_id} failed: {e}")
                 self._handle_peer_disconnect(remote_id, "error")
                 return
 
