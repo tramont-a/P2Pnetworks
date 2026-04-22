@@ -98,3 +98,14 @@ class peerLogger:
                 file.write(f"{time}: Peer {ID} has downloaded the complete file.")
         else:
             print("ERROR: completeDL")
+
+    def recRequest(self, ID1, ID2, index, time):
+        """Log when a REQUEST message is received"""
+        if (ID1 and ID2):
+            # ID1 = receiver (us) ; ID2 = sender (requester)
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
+            with open(fileName, 'a') as file:
+                file.write(f"{time}: Peer {ID1} received the 'request' message from {ID2} for piece {index}.\n")
+            print(f"{time}: Peer {ID1} received the 'request' message from {ID2} for piece {index}.")
+        else:
+            print("ERROR: recRequest")
