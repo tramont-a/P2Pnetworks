@@ -776,10 +776,11 @@ class PeerProcess:
                 elif (not now_pref) and (pid != self.optimistic_unchoke) and (not ns.choked_by_us):
                     ns.conn.send_choke()
                     ns.choked_by_us = True
-
-            self.preferred_neighbors = new_pref_ids
-
-            # Log change of preferred neighbors [3][10]
+                    
+        self.preferred_neighbors = new_pref_ids
+        
+        # Only log if there are preferred neighbors
+        if self.preferred_neighbors:  # Add this check
             self.logger.changePrefNeighbor(
                 str(self.my_peer_id),
                 list(sorted(self.preferred_neighbors)),
