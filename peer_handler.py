@@ -6,7 +6,7 @@ from peer2peerconnect import (
     PeerConnection, PeerMessage,
     CHOKE, UNCHOKE, INTERESTED, NOT_INTERESTED, HAVE, BITFIELD, REQUEST, PIECE
 )
-from peer_logger1 import PeerLogger
+from peer_logging import peerLogger
 from piece_manager import PieceManager, Bitfield
 
 
@@ -24,7 +24,7 @@ class PeerHandler:
         *,
         sock: socket.socket,
         my_peer_id: int,
-        logger: PeerLogger,
+        logger: peerLogger,
         piece_mgr: PieceManager,
         outgoing: bool,
         expected_peer_id: Optional[int] = None,

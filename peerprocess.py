@@ -334,8 +334,8 @@ class PeerProcess:
                     if attempt < max_attempts:
                         time.sleep(1.0)
             
-            if attempt >= max_attempts:
-                print(f"Failed to connect to peer {p.peer_id} after {max_attempts} attempts")
+            #if attempt >= max_attempts:
+                #print(f"Failed to connect to peer {p.peer_id} after {max_attempts} attempts")
 
     def _register_neighbor(self, remote_id: int, pc: PeerConnection) -> None:
         with self.neighbors_lock:

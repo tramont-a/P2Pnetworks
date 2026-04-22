@@ -3,7 +3,7 @@ import socket
 import threading
 from typing import Callable, Optional, List
 
-from peer_logger1 import PeerLogger
+from peer_logging import peerLogger
 from piece_manager import PieceManager
 from peer_handler import PeerHandler
 
@@ -18,7 +18,7 @@ class PeerServer:
         host: str,
         port: int,
         my_peer_id: int,
-        logger: PeerLogger,
+        logger: peerLogger,
         piece_mgr: PieceManager,
         allows_upload_to: Optional[Callable[[int], bool]] = None,
     ):
