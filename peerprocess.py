@@ -147,10 +147,13 @@ class PeerProcess:
         self.all_peers_complete = False
         self.start_time = time.time()
 
+        self.all_expected_peers = {p.peer_id for p in self.peers}
+        self.completed_peers = set()  # Track which peers have reported completion
+
     # ---------------------- Connection management ----------------------
     def _handle_peer_disconnect(self, peer_id: int, reason: str) -> None:
-        """Handle peer disconnection and cleanup"""
-        #print(f"Handling disconnect for peer {peer_id}: {reason}")
+        """Enhanced disconnect handler that tracks changes"""
+        print(f"Handling disconnect for peer {peer_id}: {reason}")
         
         with self.neighbors_lock:
             if peer_id not in self.neighbors:
@@ -166,6 +169,7 @@ class PeerProcess:
             
             # Remove from neighbors
             del self.neighbors[peer_id]
+            self._track_neighbor_changes(peer_id, "disconnected")  # Track the change
             
             # Remove from preferred/optimistic sets
             self.preferred_neighbors.discard(peer_id)
@@ -174,48 +178,60 @@ class PeerProcess:
         
         # Log the disconnection
         now = time.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id}")
+        print(f"{now}: Peer {self.my_peer_id} lost connection to Peer {peer_id} ({reason})")
     
+    def _broadcast_completion_if_needed(self) -> None:
+        """Send our bitfield periodically to help others track global completion"""
+        if self.pm.complete():
+            with self.neighbors_lock:
+                for pid, ns in self.neighbors.items():
+                    try:
+                        # Send updated bitfield to help neighbors know we're complete
+                        bitfield_bytes = self.pm.bitfield.to_bytes()
+                        ns.conn.send_bitfield(bitfield_bytes)
+                    except Exception:
+                        pass
+
     def start(self) -> None:
         """
         Entry point: start server listener and outgoing connections,
         then start timers and wait until termination condition. [10]
         """
         print("Starting up connection...")
-
-        # Start server thread (accept connections from later peers) [10]
+        
+        # Initialize tracking variables
+        self._last_neighbor_change_time = time.time()
+        
+        # Start server thread
         server_thread = threading.Thread(target=self._server_loop, daemon=True)
         server_thread.start()
-
-        # Make outgoing connections to peers listed before us [10]
-        #print("Try connecting to earlier peers...")
+        
+        # Start keepalive thread
+        keepalive_thread = threading.Thread(target=self._send_periodic_keepalive, daemon=True)
+        keepalive_thread.start()
+        
+        # Make outgoing connections to peers listed before us
         self._connect_to_earlier_peers()
-       # print("Done? connecting to earlier peers.")
-
+        
         if not self.first_neighbor_connected.wait(timeout=30.0):
-            print("Timeout.")
-
-        # Start choking/unchoking timers [10]
+            print("Timeout waiting for first neighbor")
+        
+        # Start choking/unchoking timers
         threading.Thread(target=self._unchoke_timer_loop, daemon=True).start()
         threading.Thread(target=self._optimistic_unchoke_timer_loop, daemon=True).start()
-
-        # Main completion loop: periodically check if all peers are complete [10]
+        
+        # Main completion loop with enhanced completion check
         while not self.all_peers_complete:
-            # we know our own completion from PieceManager
             if self.pm.complete():
-                # log our completion if just finished [3][10]
-                # (PieceManager.write_piece caller should also log pieceDL and completion)
-                pass
-            # In this simple skeleton, we assume that when *we* have complete file
-            # and see, via neighbor bitfields/have messages, that all neighbors have it,
-            # we can exit. [10]
-            if self._everyone_complete():
+                pass  # Log completion if needed
+            
+            # Use enhanced completion check
+            if self._enhanced_everyone_complete():
                 self.all_peers_complete = True
                 break
-            time.sleep(1.0)
-
-        # Program ends
-        # You may close sockets explicitly or rely on OS cleanup.
+            time.sleep(2.0)  # Check more frequently
+        
+        print(f"Peer {self.my_peer_id} shutting down - all peers complete")
 
     def _server_loop(self) -> None:
         """Listen for incoming TCP connections and spawn handlers. [10]"""
@@ -346,11 +362,18 @@ class PeerProcess:
                     num_pieces=self.pm.num_pieces,
                 )
                 self.first_neighbor_connected.set()
+                self._track_neighbor_changes(remote_id, "connected")  # Track the change
 
     # ---------------------- Message handling loop ---------------------- [10]
 
     def _connection_message_loop(self, remote_id: int) -> None:
-        while True:
+        """
+        Enhanced message loop that prevents premature disconnections until all peers are complete.
+        """
+        consecutive_timeouts = 0
+        max_consecutive_timeouts = 3  # Allow some tolerance for network issues
+        
+        while not self.all_peers_complete:
             with self.neighbors_lock:
                 if remote_id not in self.neighbors:
                     return
@@ -358,42 +381,204 @@ class PeerProcess:
                 conn = ns.conn
             
             try:
-                # Set a reasonable timeout for message reception
-                conn.sock.settimeout(30.0)  # 30 second timeout
+                # Use longer timeout to be more patient with peers
+                conn.sock.settimeout(60.0)  # Increased from 30 to 60 seconds [11]
                 msg = conn.recv_message()
-                
-                # Reset timeout after successful message
                 conn.sock.settimeout(None)
                 
+                # Reset timeout counter on successful message
+                consecutive_timeouts = 0
+                
+                # Handle the message normally
+                if msg.msg_type == CHOKE:
+                    self._handle_choke(remote_id)
+                elif msg.msg_type == UNCHOKE:
+                    self._handle_unchoke(remote_id)
+                elif msg.msg_type == INTERESTED:
+                    self._handle_interested(remote_id)
+                elif msg.msg_type == NOT_INTERESTED:
+                    self._handle_not_interested(remote_id)
+                elif msg.msg_type == HAVE:
+                    self._handle_have(remote_id, msg.payload)
+                elif msg.msg_type == BITFIELD:
+                    self._handle_bitfield(remote_id, msg.payload)
+                elif msg.msg_type == REQUEST:
+                    self._handle_request(remote_id, msg.payload)
+                elif msg.msg_type == PIECE:
+                    self._handle_piece(remote_id, msg.payload)
+                
             except socket.timeout:
-                #print(f"Peer {remote_id} connection timed out")
-                self._handle_peer_disconnect(remote_id, "timeout")
-                return
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-                #print(f"Peer {remote_id} connection reset by peer")
-                self._handle_peer_disconnect(remote_id, "connection_reset")
-                return
+                consecutive_timeouts += 1
+                
+                # Only disconnect on timeout if we've confirmed global completion
+                # OR if we've had too many consecutive timeouts
+                if self._everyone_complete():
+                    print(f"Peer {remote_id} timeout - global completion confirmed, disconnecting")
+                    self._handle_peer_disconnect(remote_id, "timeout_after_completion")
+                    return
+                elif consecutive_timeouts >= max_consecutive_timeouts:
+                    print(f"Peer {remote_id} - too many consecutive timeouts ({consecutive_timeouts})")
+                    self._handle_peer_disconnect(remote_id, "excessive_timeouts")
+                    return
+                else:
+                    # Log but continue trying
+                    print(f"Peer {remote_id} timeout ({consecutive_timeouts}/{max_consecutive_timeouts}) - continuing...")
+                    continue
+                    
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
+                # For connection errors, only disconnect if global completion is confirmed
+                if self._everyone_complete():
+                    print(f"Peer {remote_id} connection error after completion: {e}")
+                    self._handle_peer_disconnect(remote_id, f"connection_error_after_completion: {type(e).__name__}")
+                    return
+                else:
+                    # Try to reconnect or wait before giving up
+                    print(f"Peer {remote_id} connection error before completion: {e} - attempting recovery...")
+                    time.sleep(2.0)  # Brief pause before retry
+                    
+                    # Attempt to re-establish connection
+                    if self._attempt_reconnection(remote_id):
+                        print(f"Successfully reconnected to peer {remote_id}")
+                        continue
+                    else:
+                        print(f"Failed to reconnect to peer {remote_id}")
+                        self._handle_peer_disconnect(remote_id, f"connection_lost: {type(e).__name__}")
+                        return
+                        
             except Exception as e:
-                #print(f"Connection to peer {remote_id} failed: {e}")
-                self._handle_peer_disconnect(remote_id, "error")
-                return
+                # For other errors, be more conservative
+                print(f"Unexpected error with peer {remote_id}: {type(e).__name__}: {e}")
+                
+                # Only disconnect for unexpected errors if we're confident about global completion
+                if self._everyone_complete() and time.time() - self.start_time > 60:
+                    self._handle_peer_disconnect(remote_id, f"unexpected_error: {type(e).__name__}")
+                    return
+                else:
+                    # Log and continue for now
+                    time.sleep(1.0)
+                    continue
 
-            if msg.msg_type == CHOKE:
-                self._handle_choke(remote_id)
-            elif msg.msg_type == UNCHOKE:
-                self._handle_unchoke(remote_id)
-            elif msg.msg_type == INTERESTED:
-                self._handle_interested(remote_id)
-            elif msg.msg_type == NOT_INTERESTED:
-                self._handle_not_interested(remote_id)
-            elif msg.msg_type == HAVE:
-                self._handle_have(remote_id, msg.payload)
-            elif msg.msg_type == BITFIELD:
-                self._handle_bitfield(remote_id, msg.payload)
-            elif msg.msg_type == REQUEST:
-                self._handle_request(remote_id, msg.payload)
-            elif msg.msg_type == PIECE:
-                self._handle_piece(remote_id, msg.payload)
+    def _attempt_reconnection(self, remote_id: int) -> bool:
+        """
+        Attempt to reconnect to a peer that we've lost connection with.
+        Returns True if reconnection successful, False otherwise.
+        """
+        try:
+            # Find the peer info
+            peer_entry = next(p for p in self.peers if p.peer_id == remote_id)
+            
+            # Create new socket and connection
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(10.0)  # Short timeout for reconnection
+            s.connect((peer_entry.host, peer_entry.port))
+            
+            pc = PeerConnection(s)
+            
+            # Perform handshake
+            pc.send_handshake(self.my_peer_id)
+            confirmed_id = pc.recv_and_validate_handshake(expected_peer_id=remote_id)
+            
+            if confirmed_id != remote_id:
+                s.close()
+                return False
+            
+            # Update the connection in our neighbor state
+            with self.neighbors_lock:
+                if remote_id in self.neighbors:
+                    # Close old connection
+                    try:
+                        self.neighbors[remote_id].conn.close()
+                    except Exception:
+                        pass
+                    
+                    # Update with new connection
+                    self.neighbors[remote_id].conn = pc
+                    
+                    # Send our current bitfield
+                    if self.pm.bitfield.count_have() > 0:
+                        bitfield_bytes = self.pm.bitfield.to_bytes()
+                        pc.send_bitfield(bitfield_bytes)
+                    
+                    return True
+            
+            # If we get here, the neighbor was removed while we were reconnecting
+            s.close()
+            return False
+            
+        except Exception as e:
+            print(f"Reconnection to peer {remote_id} failed: {e}")
+            return False
+
+    def _send_periodic_keepalive(self) -> None:
+        """
+        Send periodic messages to keep connections alive and help track completion status.
+        This runs in a separate thread.
+        """
+        while not self.all_peers_complete:
+            time.sleep(30.0)  # Send keepalive every 30 seconds
+            
+            # Send our current bitfield to all neighbors to help them track our progress
+            if self.pm.bitfield.count_have() > 0:
+                bitfield_bytes = self.pm.bitfield.to_bytes()
+                
+                with self.neighbors_lock:
+                    for remote_id, ns in list(self.neighbors.items()):
+                        try:
+                            ns.conn.send_bitfield(bitfield_bytes)
+                        except Exception:
+                            # Don't disconnect here, let the main message loop handle it
+                            pass
+
+    def _enhanced_everyone_complete(self) -> bool:
+        """
+        Enhanced completion check that's more conservative about declaring completion.
+        """
+        # Basic requirements
+        if time.time() - self.start_time < 60:  # Minimum runtime
+            return False
+        
+        if not self.pm.complete():
+            return False
+        
+        with self.neighbors_lock:
+            # Must have some neighbors to be confident
+            if len(self.neighbors) == 0:
+                return False
+            
+            # All connected neighbors must be complete
+            all_neighbors_complete = all(ns.bitfield.complete() for ns in self.neighbors.values())
+            
+            if not all_neighbors_complete:
+                return False
+            
+            # Additional check: have we been stable for a while?
+            # This prevents premature exit if peers are still joining/leaving
+            if hasattr(self, '_last_neighbor_change_time'):
+                if time.time() - self._last_neighbor_change_time < 30:
+                    return False
+            
+            # If we've had the same set of complete neighbors for a while, we can exit
+            current_neighbor_set = set(self.neighbors.keys())
+            if hasattr(self, '_stable_neighbor_set'):
+                if self._stable_neighbor_set != current_neighbor_set:
+                    self._stable_neighbor_set = current_neighbor_set
+                    self._stable_since = time.time()
+                    return False
+                elif time.time() - self._stable_since > 20:  # Stable for 20 seconds
+                    return True
+            else:
+                self._stable_neighbor_set = current_neighbor_set
+                self._stable_since = time.time()
+                return False
+            
+            return all_neighbors_complete
+        
+    def _track_neighbor_changes(self, remote_id: int, action: str) -> None:
+        """
+        Track when neighbors connect/disconnect to help with completion detection.
+        """
+        self._last_neighbor_change_time = time.time()
+        print(f"Neighbor change: peer {remote_id} {action} at {time.strftime('%H:%M:%S')}")
 
     # ---------------------- Individual message handlers ----------------------
 
@@ -452,6 +637,11 @@ class PeerProcess:
         # Decide if we are interested [10]
         self._update_interest_for_neighbor(remote_id)
 
+        with self.neighbors_lock:
+            ns = self.neighbors.get(remote_id)
+            if ns is not None and ns.bitfield.complete():
+                self.completed_peers.add(remote_id)
+
     def _handle_bitfield(self, remote_id: int, payload: bytes) -> None:
         with self.neighbors_lock:
             ns = self.neighbors.get(remote_id)
@@ -460,6 +650,11 @@ class PeerProcess:
             ns.bitfield = Bitfield.from_bytes(self.pm.num_pieces, payload)
         # After receiving bitfield, decide interested/not interested and send message [10]
         self._update_interest_for_neighbor(remote_id)
+        # Check if this peer is complete
+        with self.neighbors_lock:
+            ns = self.neighbors.get(remote_id)
+            if ns is not None and ns.bitfield.complete():
+                self.completed_peers.add(remote_id)
 
     def _handle_request(self, remote_id: int, payload: bytes) -> None:
         # Only serve if this neighbor is currently unchoked by us [10]
@@ -634,25 +829,30 @@ class PeerProcess:
     # ---------------------- Completion condition ---------------------- [10]
 
     def _everyone_complete(self) -> bool:
-        # Don't exit for at least 30 seconds (adjust as needed)
+        # Don't exit for at least 30 seconds
         if time.time() - self.start_time < 30:
             return False
-
-        # Don't declare complete until we have reasonable connectivity
+        
+        # We must be complete first
         if not self.pm.complete():
             return False
         
+        # Add ourselves to completed peers if we're complete
+        if self.my_peer_id not in self.completed_peers:
+            self.completed_peers.add(self.my_peer_id)
+        
         with self.neighbors_lock:
-            # Ensure we have some neighbors (avoid premature exit)
-            if len(self.neighbors) == 0:
-                return False
+            # Update completed peers based on current neighbor states
+            for pid, ns in self.neighbors.items():
+                if ns.bitfield.complete():
+                    self.completed_peers.add(pid)
             
-            # Check if all connected neighbors are complete
-            all_neighbors_complete = all(ns.bitfield.complete() for ns in self.neighbors.values())
-            
-            # Additional safety: ensure we've been running for a minimum time
-            # This gives other peers time to connect and exchange data
-            return all_neighbors_complete
+            # Check if we know about all expected peers being complete
+            # This is conservative - only exit when we're confident everyone is done
+            if len(self.completed_peers) >= len(self.all_expected_peers):
+                return True
+        
+        return False
 
 
 # ---------------------- Main ---------------------- [10]
