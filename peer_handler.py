@@ -1,6 +1,7 @@
 # peer_handler.py
 import socket
 from typing import Optional, Callable
+import time
 
 from peer2peerconnect import (
     PeerConnection, PeerMessage,
@@ -96,11 +97,11 @@ class PeerHandler:
         if self._outgoing:
             self._conn.send_handshake(self._my_peer_id)
             self._peer_id = self._conn.recv_and_validate_handshake(self._expected_peer_id)
-            self._logger.genTCPConnLogSender(str(self._peer_id))
+            self._logger.estConnection(str(self._peer_id), str(self._expected_peer_id), time.time)
         else:
             self._peer_id = self._conn.recv_and_validate_handshake(self._expected_peer_id)
             self._conn.send_handshake(self._my_peer_id)
-            self._logger.genTCPConnLogReceiver(str(self._peer_id))
+            self._logger.estConnection(str(self._peer_id), str(self._expected_peer_id), time.time)
 
         # Send our bitfield if we have any pieces [8]
         if self._pm.bitfield.count_have() > 0:
@@ -160,28 +161,33 @@ class PeerHandler:
         self._am_unchoked = False
         self._in_flight_request = None
         if self._peer_id is not None:
-            self._logger.chokingNeighbor(str(self._peer_id))
+            # Changed from chokingNeighbor to choking
+            self._logger.choking(str(self._peer_id), str(self._my_peer_id), time.time())
 
     def _handle_unchoke(self) -> None:
         self._am_unchoked = True
         if self._peer_id is not None:
-            self._logger.unchokedNeighbor(str(self._peer_id))
+            # Changed from unchokedNeighbor to unchoking
+            self._logger.unchoking(str(self._peer_id), str(self._my_peer_id), time.time())
         self._choose_and_request()
 
     def _handle_interested(self) -> None:
         self._they_are_interested = True
         if self._peer_id is not None:
-            self._logger.receiveInterested(str(self._peer_id))
+            # Changed from receiveInterested to recInterest
+            self._logger.recInterest(str(self._my_peer_id), str(self._peer_id), time.time())
 
     def _handle_not_interested(self) -> None:
         self._they_are_interested = False
         if self._peer_id is not None:
-            self._logger.receiveNotInterested(str(self._peer_id))
+            # Changed from receiveNotInterested to recNotInterest
+            self._logger.recNotInterest(str(self._my_peer_id), str(self._peer_id), time.time())
 
     def _handle_have(self, payload: bytes) -> None:
         idx = PeerConnection.parse_index_payload(payload)
         if self._peer_id is not None:
-            self._logger.receiveHave(str(self._peer_id), idx)
+        # Changed from receiveHave to recHave
+            self._logger.recHave(str(self._my_peer_id), str(self._peer_id), idx, time.time())
         if self._neighbor_bf is None:
             self._neighbor_bf = Bitfield(self._pm.num_pieces, initial_have_all=False)
 
@@ -237,12 +243,12 @@ class PeerHandler:
             self._in_flight_request = None
 
         # Announce HAVE to all other neighbors
-        self._broadcast_have(idx, origin=self)
+        self._broadcast_have(idx, self)
 
         # Log piece download and decide next action
         if self._peer_id is not None and newly_completed:
-            self._logger.downloadPiece(str(self._peer_id), idx, self._pm.bitfield.count_have())
-
+        # Changed from downloadPiece to pieceDL
+         self._logger.pieceDL(str(self._my_peer_id), str(self._peer_id), idx, self._pm.bitfield.count_have(), time.time())
         # If we now have the full file, we may become uninterested in some neighbors [8]
         if self._neighbor_bf is not None:
             # Try to request the next interesting piece if still unchoked

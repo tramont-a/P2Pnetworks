@@ -301,7 +301,7 @@ class PeerProcess:
                 try:
                     print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(5.0)  # Add socket timeout
+                    s.settimeout(10.0)  # Add socket timeout
 
                     s.connect((p.host, p.port))
                     print(f"✓ Socket connected to peer {p.peer_id}")  # Debug step 6
