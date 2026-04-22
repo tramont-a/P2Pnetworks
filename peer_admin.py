@@ -6,7 +6,7 @@ from typing import Dict, Optional, Set, List
 
 from common_config import CommonConfig
 from peer_info_config import PeerInfoConfig, RemotePeerInfo
-from peer_logger1 import PeerLogger
+from peer_logging import peerLogger
 from piece_manager import PieceManager, Bitfield
 from peer_server import PeerServer
 from peer_handler import PeerHandler
@@ -48,7 +48,7 @@ class PeerAdmin:
         self._neighbor_bf: Dict[int, Bitfield] = {}
 
         # Logger
-        self.logger = PeerLogger(str(self.my_id))
+        self.logger = peerLogger()
 
         # Control
         self._stop_ev = threading.Event()
@@ -117,7 +117,7 @@ class PeerAdmin:
         except Exception:
             pass
         try:
-            self.logger.closeLogger()
+            del self.logger
         except Exception:
             pass
 

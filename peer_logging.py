@@ -2,6 +2,9 @@
 from pathlib import Path
 
 class peerLogger:
+    def __del__(self):
+        print("Closing logger...")
+
     def estConnection(self, ID1, ID2, time):
         # check if read message properly
         if (ID1 and ID2):   # non empty
@@ -19,7 +22,7 @@ class peerLogger:
 
     def changePrefNeighbor(self, ID, idList: list, time):
         if (ID):
-            fileName = "log_peer_" + ID + ".log"
+            fileName = "peer_" + ID + "/log_peer_" + ID + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID} has the preferred neighbors {idList}.\n")
         else:
@@ -28,7 +31,7 @@ class peerLogger:
     def changeOUN(self, ID1, ID2, time):    # OUN = optimistically unchoked neighbor
         if (ID1 and ID2):
             # ID 1 = changer ; ID 2 = neighbor
-            fileName = "log_peer_" + ID1 + ".log"
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID1} has the optimistically unchoked neighbor {ID2}.\n")
         else:
@@ -37,7 +40,7 @@ class peerLogger:
     def unchoking(self, ID1, ID2, time):
         # ID 1 = unchoker ; ID 2 = logger
         if (ID1 and ID2):
-            fileName = ID2 + ".log"
+            fileName = "peer_" + ID2 + "/log_peer_" + ID2 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID2} is unchoked by {ID1}.\n")
         else:
@@ -46,7 +49,7 @@ class peerLogger:
     def choking(self, ID1, ID2, time):
         # ID 1 = choker ; ID 2 = logger
         if (ID1 and ID2):
-            fileName = ID2 + ".log"
+            fileName = "peer_" + ID2 + "/log_peer_" + ID2 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID2} is choked by {ID1}.\n")
         else:
@@ -55,7 +58,7 @@ class peerLogger:
     def recHave(self, ID1, ID2, index, time):
         if (ID1 and ID2):
             # ID 1 = receiver ; ID 2 = sender
-            fileName = "log_peer_" + ID1 + ".log"
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID1} received the 'have' message from {ID2} for the piece {index}.\n")
         else:
@@ -64,7 +67,7 @@ class peerLogger:
     def recInterest(self, ID1, ID2, time):
         if (ID1 and ID2):
             # ID 1 = receiver ; ID 2 = sender
-            fileName = "log_peer_" + ID1 + ".log"
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID1} received the 'interested' message from {ID2}.\n")
         else:
@@ -73,7 +76,7 @@ class peerLogger:
     def recNotInterest(self, ID1, ID2, time):
         if (ID1 and ID2):
             # ID 1 = receiver ; ID 2 = sender
-            fileName = "log_peer_" + ID1 + ".log"
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID1} receoved the 'not interested' message from {ID2}.\n")
         else:
@@ -82,7 +85,7 @@ class peerLogger:
     def pieceDL(self, ID1, ID2, index, number, time):
         if (ID1 and ID2):
             # ID1 = downloader ; ID2 = sender
-            fileName = "log_peer_" + ID1 + ".log"
+            fileName = "peer_" + ID1 + "/log_peer_" + ID1 + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID1} has downloaded the piece {index} from {ID2}. Now the number of pieces it has is {number}.\n")
         else:
@@ -90,7 +93,7 @@ class peerLogger:
 
     def completeDL(self, ID, time):
         if (ID):
-            fileName = "log_peer_" + ID + ".log"
+            fileName = "peer_" + ID + "/log_peer_" + ID + ".log"
             with open(fileName, 'a') as file:
                 file.write(f"{time}: Peer {ID} has downloaded the complete file.")
         else:

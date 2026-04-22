@@ -32,7 +32,6 @@ class CommonConfig:
         self.file_size = 0
         self.piece_size = 0
         self._parse()
-        self.first_neighbor_connected = threading.Event()
 
     def _parse(self) -> None:
         with open(self.path, "r") as f:
@@ -64,7 +63,7 @@ class PeerInfoEntry:
 
 
 def parse_peerinfo(path: str) -> List[PeerInfoEntry]:
-    print("Parsing peer info.")
+    #print("Parsing peer info.")
     peers: List[PeerInfoEntry] = []
     with open(path, "r") as f:
         for line in f:
@@ -80,8 +79,8 @@ def parse_peerinfo(path: str) -> List[PeerInfoEntry]:
                     has_file=(has_str == "1"),
                 )
             )
-            print(pid_str)
-    print(peers)
+            #print(pid_str)
+    #print(peers)
     return peers
 
 
@@ -136,6 +135,9 @@ class PeerProcess:
         self.neighbors_lock = threading.Lock()
         self.neighbors: Dict[int, NeighborState] = {}  # peer_id -> state
 
+        # threading
+        self.first_neighbor_connected = threading.Event()
+        
         # sets for unchoking
         self.preferred_neighbors: Set[int] = set()
         self.optimistic_unchoke: Optional[int] = None
@@ -144,16 +146,6 @@ class PeerProcess:
         self.all_peers_complete = False
 
     # ---------------------- Connection management ----------------------
-    def _register_neighbor(self, remoteID: int, pc: PeerConnection) -> None:
-        with self.neighbors_lock:
-            if remoteID not in self.neighbors:
-                self.neighbors[remoteID] = NeighborState(
-                    peer_id=remoteID,
-                    conn=pc,
-                    num_pieces=self.pm.num_pieces,
-                )
-            self.first_neighbor_connected.set()
-
     def start(self) -> None:
         """
         Entry point: start server listener and outgoing connections,
@@ -170,23 +162,8 @@ class PeerProcess:
         self._connect_to_earlier_peers()
         print("Done? connecting to earlier peers.")
 
-        server_thread = threading.Thread(target=self._server_loop, daemon=True)
-        server_thread.start()
-
-        maxWait = 30
-        waitCount = 0
-
-        # Wait until we are connected to at least one neighbor before
-        # starting piece exchange. [10]
-        while waitCount < (maxWait*10):
-            with self.neighbors_lock:
-                if self.neighbors:
-                    break
-            time.sleep(0.1)
-            waitCount += 1
-
-        if not self.neighbors:
-            print("No neighbors connected after waiting.")
+        if not self.first_neighbor_connected.wait(timeout=30.0):
+            print("Timeout. No neighbors connected.")
 
         # Start choking/unchoking timers [10]
         threading.Thread(target=self._unchoke_timer_loop, daemon=True).start()
@@ -227,6 +204,11 @@ class PeerProcess:
         try:
             # Receive handshake from remote [10]
             remote_id = pc.recv_and_validate_handshake()
+
+            if remote_id == self.my_peer_id:
+                print(f"Rejecting self-connection: {remote_id}")
+                pc.close()
+                return
             # Send our handshake [10]
             pc.send_handshake(self.my_peer_id)
 
@@ -251,52 +233,67 @@ class PeerProcess:
             pc.close()
 
     def _connect_to_earlier_peers(self) -> None:
-        """
-        For each peer listed before us in PeerInfo.cfg, connect as a client. [10]
-        """
         print("Connect to earlier peers.")
         my_index = next(i for i, p in enumerate(self.peers) if p.peer_id == self.my_peer_id)
-        print(my_index)
         if my_index == 0:
-            return # first peer in loop, no earlier to list
+            print("No earlier peers to connect to.")
+            return
+        
         earlier = self.peers[:my_index]
-        print(earlier)
+        print(f"Earlier peers to connect to: {[(p.peer_id, p.host, p.port) for p in earlier]}")  # Debug step 3
+
         for p in earlier:
-            print("in for")
-            while True:
-                print("in while")
+            if p.peer_id == self.my_peer_id:
+                continue
+            print(f"Attempting to connect to peer {p.peer_id} at {p.host}:{p.port}")  # Debug step 4
+            max_attempts = 5  # Add retry limit instead of infinite loop
+            attempt = 0
+            
+            while attempt < max_attempts:
                 try:
-                    print("Trying connection..")
+                    print(f"Connection attempt {attempt + 1} to peer {p.peer_id}")  # Debug step 5
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(5.0)  # Add socket timeout
                     s.connect((p.host, p.port))
+                    print(f"✓ Socket connected to peer {p.peer_id}")  # Debug step 6
                     pc = PeerConnection(s)
-
-                    # Send our handshake [10]
+                    
+                    print(f"Sending handshake to peer {p.peer_id}")  # Debug step 7
                     pc.send_handshake(self.my_peer_id)
-                    # Receive and validate their handshake [10]
+                    
+                    print(f"Receiving handshake from peer {p.peer_id}")  # Debug step 8
                     remote_id = pc.recv_and_validate_handshake(expected_peer_id=p.peer_id)
-
-                    now = time.strftime("%Y-%m-%d %H:%M:%S")
-                    # we are connector (ID1), remote is connectee (ID2) [3]
-                    self.logger.estConnection(str(self.my_peer_id), str(remote_id), now)
-
+                    print(f"✓ Handshake complete with peer {remote_id}")  # Debug step 9
+                    
+                    # Register neighbor [13]
                     self._register_neighbor(remote_id, pc)
 
-                    # Send our bitfield if we have any piece [10]
+                    # Log connection [13]
+                    now = time.strftime("%Y-%m-%d %H:%M:%S")
+                    self.logger.estConnection(str(self.my_peer_id), str(remote_id), now)
+                    
+                    # Send our bitfield if we have any pieces [13]
                     if self.pm.bitfield.count_have() > 0:
                         bitfield_bytes = self.pm.bitfield.to_bytes()
                         pc.send_bitfield(bitfield_bytes)
-
-                    # For each connection, run its message loop in separate thread
+                    
+                    # Start message loop in separate thread [13]
                     threading.Thread(
                         target=self._connection_message_loop,
                         args=(remote_id,),
                         daemon=True,
                     ).start()
-                    break
-                except Exception:
-                    # Retry until remote peer is up
-                    time.sleep(1.0)
+                    
+                    break  # Connection successful
+                    
+                except Exception as e:
+                    attempt += 1
+                    print(f"Connection attempt {attempt} to peer {p.peer_id} failed: {e}")
+                    if attempt < max_attempts:
+                        time.sleep(1.0)
+            
+            if attempt >= max_attempts:
+                print(f"Failed to connect to peer {p.peer_id} after {max_attempts} attempts")
 
     def _register_neighbor(self, remote_id: int, pc: PeerConnection) -> None:
         with self.neighbors_lock:
@@ -306,6 +303,7 @@ class PeerProcess:
                     conn=pc,
                     num_pieces=self.pm.num_pieces,
                 )
+                self.first_neighbor_connected.set()
 
     # ---------------------- Message handling loop ---------------------- [10]
 
@@ -349,7 +347,7 @@ class PeerProcess:
                 return
             ns.choked_us = True
         # Log "is choked by" [3][10]
-        self.logger.choking(str(remote_id), f"log_peer_{self.my_peer_id}", now)
+        self.logger.choking(str(remote_id), str(self.my_peer_id), now)
 
     def _handle_unchoke(self, remote_id: int) -> None:
         now = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -359,7 +357,7 @@ class PeerProcess:
                 return
             ns.choked_us = False
         # Log "is unchoked by" [3][10]
-        self.logger.unchoking(str(remote_id), f"log_peer_{self.my_peer_id}", now)
+        self.logger.unchoking(str(remote_id), str(self.my_peer_id), now)
         # When unchoked, send first request if there is an interesting piece [10]
         self._maybe_send_request(remote_id)
 
